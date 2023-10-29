@@ -27,7 +27,7 @@ public struct ApplicationArchive {
             archiveURL = url
         }
 
-        root = try await Self.buildNode(from: archiveURL)
+        root = try await Self.buildNode(from: archiveURL, name: url.lastPathComponent)
         root.computeSizes()
         buildIndex(from: root)
         markDuplicates()
@@ -41,11 +41,13 @@ public struct ApplicationArchive {
 
         public init(
             from url: URL,
+            parent: Node?,
             name: String? = nil,
             resourceType: URLFileResourceType? = nil,
             contentType: ContentType? = nil
         ) {
             self.url = url
+            self.parent = parent
             self.name = name ?? url.lastPathComponent
             self.resourceType = resourceType ?? (try? url.resourcesType)
             self.contentType = contentType ?? url.contentType
@@ -59,6 +61,7 @@ public struct ApplicationArchive {
         public typealias Checksum = String
 
         public let url: URL
+        public let parent: Node?
         public let name: String
         public let resourceType: URLFileResourceType?
         public let contentType: ContentType?
@@ -143,12 +146,12 @@ public struct ApplicationArchive {
 
     private var index = Index()
 
-    private static func buildNode(from url: URL) async throws -> Node {
+    private static func buildNode(from url: URL, parent: Node? = nil, name: String? = nil) async throws -> Node {
         guard Self.fileManager.fileExists(atPath: url.path) else {
             throw TreeError.fileDoesNotExist
         }
 
-        return try await .init(from: url)..{
+        return try await .init(from: url, parent: parent, name: name)..{
             try await configure(node: $0)
         }
     }
@@ -163,7 +166,7 @@ public struct ApplicationArchive {
 
     private static func configureDirectory(_ node: Node) async throws {
         node.children = try await Self.fileManager.contentsOfDirectory(at: node.url, includingPropertiesForKeys: [])
-            .compactMapAsync(buildNode(from:))
+            .compactMapAsync { try await buildNode(from:$0, parent: node) }
 
         let checksum: String = node.children
             .compactMap(\.checksum)
@@ -178,11 +181,11 @@ public struct ApplicationArchive {
     private static func configureFile(_ node: Node) async throws {
         switch node.contentType {
         case .package(.car):
-            if let content = try? await node.assetCatalogContent() {
+            if let content = try? await node.assetCatalogContent(parent: node) {
                 node.children = content
             }
         case .binary:
-            if let content = try? await node.binaryContent() {
+            if let content = try? await node.binaryContent(parent: node) {
                 node.children = content
             }
         default:
@@ -242,7 +245,7 @@ extension ApplicationArchive.Node {
         return sizeInBytes
     }
 
-    fileprivate func binaryContent() async throws -> [ApplicationArchive.Node] {
+    fileprivate func binaryContent(parent: ApplicationArchive.Node) async throws -> [ApplicationArchive.Node] {
         let lines = try await Terminal().runCommand("/usr/bin/size", arguments: [url.relativePath])
             .split(separator: "\n")
             .map {
@@ -272,6 +275,7 @@ extension ApplicationArchive.Node {
             let (key, value) = keyValue
             result.append(.init(
                 from: url.appendingPathComponent(UUID().uuidString),
+                parent: parent,
                 name: key,
                 contentType: .binarySection
             )..{
@@ -281,7 +285,7 @@ extension ApplicationArchive.Node {
         }
     }
 
-    fileprivate func assetCatalogContent() async throws -> [ApplicationArchive.Node] {
+    fileprivate func assetCatalogContent(parent: ApplicationArchive.Node) async throws -> [ApplicationArchive.Node] {
         var output = Data()
 
         for try await streamData in Terminal().streamCommand(
@@ -298,6 +302,7 @@ extension ApplicationArchive.Node {
                 else { return nil }
                 return .init(
                     from: url.appendingPathComponent(UUID().uuidString),
+                    parent: parent,
                     name: fileName,
                     contentType: .asset
                 )..{
