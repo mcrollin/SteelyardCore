@@ -6,6 +6,7 @@ import Foundation
 
 // MARK: - Terminal
 
+#if os(macOS)
 final class Terminal: @unchecked Sendable {
 
     // MARK: Lifecycle
@@ -14,7 +15,7 @@ final class Terminal: @unchecked Sendable {
 
     // MARK: Internal
 
-    struct TerminationError: Error {
+    struct TerminationError: LocalizedError {
         let reason: Process.TerminationReason
         let status: Int32
     }
@@ -135,7 +136,7 @@ final class Terminal: @unchecked Sendable {
                             if process.terminationStatus == 0 {
                                 continuation.resume(returning: content)
                             } else {
-                                struct LocalizedTerminationError: Error, LocalizedError {
+                                struct LocalizedTerminationError: LocalizedError {
                                     let terminationError: TerminationError
                                     let errorDescription: String?
                                 }
@@ -181,3 +182,4 @@ final class Terminal: @unchecked Sendable {
         return env
     }
 }
+#endif

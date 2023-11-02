@@ -6,10 +6,10 @@ import Foundation
 
 // MARK: - ErrorResponse
 
-struct ErrorResponse: Error, Codable, CustomStringConvertible {
+struct ErrorResponse: LocalizedError, Codable {
     let errors: [ErrorDetail]
 
-    var description: String {
+    var errorDescription: String? {
         errors.map(\.detail).joined(separator: "\n")
     }
 }

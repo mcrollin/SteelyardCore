@@ -2,6 +2,7 @@
 //  Copyright © Marc Rollin.
 //
 
+import Dependencies
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -21,7 +22,11 @@ private final class ViewRenderer<Content: View> {
     var imageRenderer: ImageRenderer<Content> {
         get async {
             ImageRenderer(content: content)..{
+                #if os(macOS)
                 $0.scale = NSScreen.main?.backingScaleFactor ?? 3
+                #else
+                $0.scale = UIScreen.main.scale
+                #endif
             }
         }
     }
@@ -33,16 +38,16 @@ private final class ViewRenderer<Content: View> {
 
 // MARK: - RenderingError
 
-public enum RenderingError: Error, CustomStringConvertible {
+public enum RenderingError: LocalizedError {
     case viewRender
     case diskWrite(url: URL)
 
-    public var description: String {
+    public var errorDescription: String? {
         switch self {
         case .viewRender:
             "Could not render view"
         case .diskWrite(let url):
-            "Could not write to disk at path \(url.absoluteString)"
+            "Could not write to disk at path \(url.relativePath)"
         }
     }
 }
@@ -96,7 +101,7 @@ extension View {
     private func fileURL(from url: URL?, withExtension extension: String) -> URL {
         url ?? FileManager.default
             .temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent(Dependency(\.uuid).wrappedValue().uuidString)
             .appendingPathExtension(`extension`)
     }
 

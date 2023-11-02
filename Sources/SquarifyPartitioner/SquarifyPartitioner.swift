@@ -4,19 +4,20 @@
 
 import CoreGraphics
 import Foundation
+import Platform
 
 // MARK: - Partitionable
 
 public protocol Partitionable {
     var size: CGFloat { get }
-    var segments: [Self] { get }
 }
 
 // MARK: - Partition
 
-public struct Partition<Item: Partitionable> {
+public struct Partition<Segment: Partitionable> {
     public let rect: CGRect
-    public let item: Item
+    public let normalizedSize: CGFloat
+    public let segment: Segment
 }
 
 // MARK: - SquarifyPartitioner
@@ -26,23 +27,24 @@ public enum SquarifyPartitioner {
 
     // MARK: Public
 
-    public static func partition<Item: Partitionable>(item: Item, frame: CGRect) -> [Partition<Item>] {
-        guard item.segments.count > 1 else {
-            guard let singleSegment = item.segments.first else {
+    public static func partition<Segment: Partitionable>(segments: [Segment], frame: CGRect) -> [Partition<Segment>] {
+        let totalSize = segments.map(\.size).reduce(0, +)
+
+        guard segments.count > 1 else {
+            guard let singleSegment = segments.first else {
                 return []
             }
-            return [Partition(rect: frame, item: singleSegment)]
+            return [Partition(rect: frame, normalizedSize: 1, segment: singleSegment)]
         }
 
         var frame = frame
-        var partitions: [Partition<Item>] = []
-        var scaledItems: [ScaledItem<Item>] = item.segments
-            .sorted(by: { $0.size > $1.size })
+        var partitions: [Partition<Segment>] = []
+        var normalizedSegments: [NormalizedSegment<Segment>] = segments
             .filter { $0.size > 0 }
-            .map { .init(scaledSize: ($0.size * frame.size.height * frame.size.width) / item.size, item: $0) }
+            .map { .init(normalizedSize: ($0.size * frame.size.height * frame.size.width) / totalSize, segment: $0) }
 
         squarify(
-            scaledNodes: &scaledItems,
+            normalizedSegments: &normalizedSegments,
             width: biggestFittingSquare(for: frame.size).side,
             partitions: &partitions,
             frame: &frame
@@ -62,13 +64,13 @@ public enum SquarifyPartitioner {
         let side: CGFloat
     }
 
-    private struct ScaledItem<Item: Partitionable> {
-        let scaledSize: CGFloat
-        let item: Item
+    private struct NormalizedSegment<Segment: Partitionable> {
+        let normalizedSize: CGFloat
+        let segment: Segment
     }
 
-    private static func worstRatio(row: [ScaledItem<some Partitionable>], width: CGFloat) -> CGFloat {
-        let rowScaledSizes = row.map(\.scaledSize)
+    private static func worstRatio(row: [NormalizedSegment<some Partitionable>], width: CGFloat) -> CGFloat {
+        let rowScaledSizes = row.map(\.normalizedSize)
         let sum = rowScaledSizes.reduce(0, +)
 
         guard let rowMax = rowScaledSizes.max(),
@@ -93,21 +95,21 @@ public enum SquarifyPartitioner {
             : .init(orientation: .horizontal, side: size.width)
     }
 
-    private static func layoutRow<Item: Partitionable>(
-        row: [ScaledItem<Item>],
+    private static func layoutRow<Segment: Partitionable>(
+        row: [NormalizedSegment<Segment>],
         width: CGFloat,
         orientation: SquareFit.Orientation,
-        partitions: inout [Partition<Item>],
+        partitions: inout [Partition<Segment>],
         frame: inout CGRect
     ) {
         guard width > 0 else { return }
 
-        let rowHeight = row.map(\.scaledSize).reduce(0, +) / width
+        let rowHeight = row.map(\.normalizedSize).reduce(0, +) / width
 
         guard rowHeight > 0 else { return }
 
-        for scaledItem in row {
-            let rowWidth = scaledItem.scaledSize / rowHeight
+        for normalizedSegment in row {
+            let rowWidth = normalizedSegment.normalizedSize / rowHeight
 
             var newFrame: CGRect
             switch orientation {
@@ -119,7 +121,7 @@ public enum SquarifyPartitioner {
                 frame.origin.x += rowWidth
             }
 
-            partitions.append(.init(rect: newFrame, item: scaledItem.item))
+            partitions.append(.init(rect: newFrame, normalizedSize: normalizedSegment.normalizedSize, segment: normalizedSegment.segment))
         }
 
         switch orientation {
@@ -134,14 +136,14 @@ public enum SquarifyPartitioner {
         }
     }
 
-    private static func squarify<Item: Partitionable>(
-        scaledNodes: inout [ScaledItem<Item>],
-        row: [ScaledItem<Item>] = [],
+    private static func squarify<Segment: Partitionable>(
+        normalizedSegments: inout [NormalizedSegment<Segment>],
+        row: [NormalizedSegment<Segment>] = [],
         width: CGFloat,
-        partitions: inout [Partition<Item>],
+        partitions: inout [Partition<Segment>],
         frame: inout CGRect
     ) {
-        guard scaledNodes.count != 1 else {
+        guard normalizedSegments.count != 1 else {
             let maxSquareFit = biggestFittingSquare(for: frame.size)
             layoutRow(
                 row: row,
@@ -151,7 +153,7 @@ public enum SquarifyPartitioner {
                 frame: &frame
             )
             layoutRow(
-                row: scaledNodes,
+                row: normalizedSegments,
                 width: width,
                 orientation: maxSquareFit.orientation,
                 partitions: &partitions,
@@ -160,14 +162,14 @@ public enum SquarifyPartitioner {
             return
         }
 
-        guard let firstNode = scaledNodes.first else {
+        guard let firstNode = normalizedSegments.first else {
             return
         }
 
         let rowWithChild = row + CollectionOfOne(firstNode)
         if row.isEmpty || worstRatio(row: row, width: width) >= worstRatio(row: rowWithChild, width: width) {
-            scaledNodes.removeFirst()
-            squarify(scaledNodes: &scaledNodes, row: rowWithChild, width: width, partitions: &partitions, frame: &frame)
+            normalizedSegments.removeFirst()
+            squarify(normalizedSegments: &normalizedSegments, row: rowWithChild, width: width, partitions: &partitions, frame: &frame)
         } else {
             layoutRow(
                 row: row,
@@ -177,7 +179,7 @@ public enum SquarifyPartitioner {
                 frame: &frame
             )
             squarify(
-                scaledNodes: &scaledNodes,
+                normalizedSegments: &normalizedSegments,
                 width: biggestFittingSquare(for: frame.size).side,
                 partitions: &partitions,
                 frame: &frame

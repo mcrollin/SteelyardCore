@@ -20,20 +20,19 @@ actor AppStoreConnectClient {
 
     // MARK: Internal
 
-    enum RequestError: Error, CustomStringConvertible {
+    enum RequestError: LocalizedError {
         case http(code: Int, data: Data)
 
-        var description: String {
+        var errorDescription: String? {
             switch self {
             case .http(let code, _):
-                var explanation = ""
-                switch code {
+                let explanation = switch code {
                 case 400..<500:
-                    explanation = "The request was invalid or cannot be otherwise served."
+                    "The request was invalid or cannot be otherwise served."
                 case 500..<600:
-                    explanation = "An error occurred on the server while processing the request."
+                    "An error occurred on the server while processing the request."
                 default:
-                    explanation = "An unknown HTTP error occurred."
+                    "An unknown HTTP error occurred."
                 }
                 return "Network issue: Received HTTP status code \(code). \(explanation)"
             }

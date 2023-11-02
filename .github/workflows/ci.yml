@@ -61,4 +61,4 @@ jobs:
         with:
           xcode-version: ${{ matrix.xcode }} 
       - name: ${{ matrix.name }}
-        run: set -o pipefail && env NSUnbufferedIO=YES xcodebuild -scheme "SteelyardCore-Package" -destination "${{ matrix.destination }}" clean build 2>&1 | xcpretty
+        run: xcodebuild clean build -scheme "SteelyardCore-Package" -destination "${{ matrix.destination }}" | xcpretty
