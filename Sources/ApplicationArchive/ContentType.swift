@@ -7,16 +7,17 @@ import UniformTypeIdentifiers
 
 // MARK: - ContentType
 
-public enum ContentType: CustomStringConvertible {
+enum ContentType: Sendable, Equatable, CustomStringConvertible {
     case asset
     case binary(BinaryFileType)
     case binarySection
     case package(PackageExtension)
     case universal(UTType)
 
-    // MARK: Public
+    // MARK: Internal
 
-    public enum PackageExtension: String, CustomStringConvertible {
+    enum PackageExtension: String, Equatable, CustomStringConvertible {
+        case app
         case appex
         case bundle
         case car
@@ -25,10 +26,12 @@ public enum ContentType: CustomStringConvertible {
         case mlmodelc
         case momd
 
-        // MARK: Public
+        // MARK: Internal
 
-        public var description: String {
+        var description: String {
             switch self {
+            case .app:
+                "Application"
             case .appex:
                 "App Extension"
             case .bundle:
@@ -47,7 +50,7 @@ public enum ContentType: CustomStringConvertible {
         }
     }
 
-    public var description: String {
+    var description: String {
         switch self {
         case .asset:
             "Asset"
@@ -62,7 +65,7 @@ public enum ContentType: CustomStringConvertible {
         }
     }
 
-    public var displayName: String? {
+    var displayName: String? {
         switch self {
         case .asset, .binarySection:
             nil

@@ -83,10 +83,10 @@ public actor AppStoreConnect {
 
     // MARK: Internal
 
-    enum ConnectError: Error, CustomStringConvertible {
+    enum ConnectError: LocalizedError {
         case missingBuildBundle(buildID: String, buildVersion: String)
 
-        var description: String {
+        var errorDescription: String? {
             switch self {
             case .missingBuildBundle(_, let buildVersion):
                 "No build bundle found for build #\(buildVersion)"

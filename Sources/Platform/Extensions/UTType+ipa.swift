@@ -1,8 +1,5 @@
 //
-//  File.swift
-//  
-//
-//  Created by Marc Rollin on 28/10/2023.
+//  Copyright © Marc Rollin.
 //
 
 import Foundation

@@ -2,16 +2,18 @@
 //  Copyright © Marc Rollin.
 //
 
+import DesignSystem
 import Platform
 import SquarifyPartitioner
 import SwiftUI
 
 // MARK: - TreeMapDisplayable
 
-public protocol TreeMapDisplayable: Partitionable, Identifiable, CustomStringConvertible {
+public protocol TreeMapDisplayable: Partitionable, Identifiable {
+    var name: String { get }
     var color: Color? { get }
-    var isDuplicate: Bool { get }
     var shouldShowDetails: Bool { get }
+    var segments: [Self] { get }
 }
 
 // MARK: - TreeMap
@@ -22,12 +24,14 @@ public struct TreeMap<Node: TreeMapDisplayable>: View {
 
     public init(
         node: Node,
-        spacing: CGFloat = 16,
+        hovering: Node? = nil,
+        duplicates: Set<Node.ID>,
         onTap: ((Node) -> Void)? = nil,
-        onHover: ((Node?) -> Void)? = nil
+        onHover: ((Node, Bool) -> Void)? = nil
     ) {
         self.node = node
-        self.spacing = spacing
+        self.hovering = hovering
+        self.duplicateIDs = duplicates
         self.onTap = onTap
         self.onHover = onHover
     }
@@ -36,24 +40,19 @@ public struct TreeMap<Node: TreeMapDisplayable>: View {
 
     public var body: some View {
         tree
-            .padding(spacing)
-            .background(.background)
-    }
-
-    // MARK: Internal
-
-    var hoveringNode: Node? {
-        hoverStack.last
+            .padding(designSystem.spacing)
+            .background(designSystem.color(.background))
     }
 
     // MARK: Private
 
     private let node: Node
-    private let spacing: CGFloat
+    private let hovering: Node?
+    private let duplicateIDs: Set<Node.ID>
     private let onTap: ((Node) -> Void)?
-    private let onHover: ((Node?) -> Void)?
+    private let onHover: ((Node, Bool) -> Void)?
 
-    @State private var hoverStack: [Node] = []
+    @Environment(DesignSystem.self) private var designSystem
 
     @ViewBuilder
     private var tree: some View {
@@ -69,33 +68,41 @@ public struct TreeMap<Node: TreeMapDisplayable>: View {
     }
 
     private func drawTreemap(in rect: CGRect, node: Node) -> some View {
-        drawTreemap(
+        let isDuplicate = duplicateIDs.contains(node.id)
+        let background: Color = if isDuplicate {
+            designSystem.color(.negative)
+        } else {
+            node.color ?? .clear
+        }
+        let foreground: Color = if isDuplicate {
+            .white
+        } else if node.shouldShowDetails {
+            .primary
+        } else {
+            background
+        }
+
+        return drawTreemap(
             node: node,
+            background: background,
+            foreground: foreground,
             includeDetails: rect.size.canDisplayTitle
         )
+        .border(hovering?.id == node.id ? designSystem.color(.highlight) : background)
+        .padding(1)
         .contentShape(Rectangle())
         .onTapGesture {
             onTap?(node)
         }
         .onHover(perform: { hovering in
-            withAnimation(.easeOut(duration: 0.15)) {
-                if hovering {
-                    hoverStack.append(node)
-                } else {
-                    hoverStack.removeLast()
-                }
-            }
-            onHover?(hoveringNode)
+            onHover?(node, hovering)
         })
         .frame(width: rect.width, height: rect.height)
         .position(x: rect.origin.x + rect.width / 2, y: rect.origin.y + rect.height / 2)
     }
 
     @ViewBuilder
-    private func drawTreemap(node: Node, includeDetails: Bool) -> some View {
-        let background = node.color ?? .clear
-        let foreground: Color = node.isDuplicate ? .white : (node.shouldShowDetails ? .primary : background)
-
+    private func drawTreemap(node: Node, background: Color, foreground: Color, includeDetails: Bool) -> some View {
         if node.shouldShowDetails, includeDetails {
             detailedNode(node: node, background: background, foreground: foreground)
         } else {
@@ -104,8 +111,8 @@ public struct TreeMap<Node: TreeMapDisplayable>: View {
     }
 
     private func detailedNode(node: Node, background: Color, foreground: Color) -> some View {
-        VStack(spacing: spacing * 0.7) {
-            Text(node.description)
+        VStack(spacing: designSystem.spacing(.semiSmall)) {
+            Text(node.name)
                 .font(.headline)
                 .foregroundColor(foreground)
                 .lineLimit(1)
@@ -116,22 +123,20 @@ public struct TreeMap<Node: TreeMapDisplayable>: View {
                         width: geometry.size.width,
                         height: geometry.size.height
                     )
-                    ForEach(partitions, id: \.item.id) { partition in
+                    ForEach(partitions, id: \.segment.id) { partition in
                         AnyView(
                             drawTreemap(
                                 in: partition.rect,
-                                node: partition.item
+                                node: partition.segment
                             )
                         )
                     }
                 }
-                .background(.background)
+                .background(designSystem.color(.backgroundSubdued))
             }
         }
-        .padding(spacing * 0.5)
-        .background(background.opacity(0.6))
-        .border(hoveringNode?.id == node.id ? .yellow : background)
-        .padding(1)
+        .padding(designSystem.spacing(.small))
+        .background(background.opacity(designSystem.opacity(.medium)))
     }
 
     private func simpleNode(
@@ -142,18 +147,26 @@ public struct TreeMap<Node: TreeMapDisplayable>: View {
     )
     -> some View {
         Rectangle()
-            .fill(background.opacity(node.isDuplicate ? 0.8 : (node.shouldShowDetails ? 0.6 : 0.3)))
-            .border(hoveringNode?.id == node.id ? .yellow : foreground)
-            .padding(1)
+            .fill(background.opacity(backgroundOpacity(node: node)))
             .overlay {
                 if includeDetails {
-                    Text(node.description)
+                    Text(node.name)
                         .font(.subheadline)
                         .foregroundColor(foreground)
-                        .padding(spacing)
+                        .padding(designSystem.spacing)
                         .clipped()
                 }
             }
+    }
+
+    private func backgroundOpacity(node: Node) -> CGFloat {
+        if duplicateIDs.contains(node.id) {
+            designSystem.opacity(.dense)
+        } else if node.shouldShowDetails {
+            designSystem.opacity(.medium)
+        } else {
+            designSystem.opacity(.faint)
+        }
     }
 
     private func partition(
@@ -163,7 +176,7 @@ public struct TreeMap<Node: TreeMapDisplayable>: View {
     ) -> [Partition<Node>] {
         SquarifyPartitioner
             .partition(
-                item: node,
+                segments: node.segments,
                 frame: .init(origin: .zero, size: .init(width: width, height: height))
             )
     }
